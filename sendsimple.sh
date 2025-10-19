@@ -50,7 +50,7 @@ echo "Found!"
 # Select notes until total assets cover required amount
 selected_notes=()
 selected_assets=0
-while IFS=',' read -r name_first name_last assets *block*height *source*hash; do
+while IFS=',' read -r name_first name_last assets block_height source_hash; do
   [[ "$name_first" == "name_first" ]] && continue
   selected_notes+=("$name_first $name_last")
   selected_assets=$((selected_assets + assets))
@@ -91,9 +91,9 @@ if [[ -n "$index" ]]; then
   if ! nockchain-wallet "${GRPC_ARGS[@]}" create-tx \
     --names "$names_arg" \
     --recipients "$recipients_arg" \
-    --gifts "$gift" \
-    --fee "$fee" \
-    --index "$index" >/dev/null; then
+    --gifts $gift \
+    --fee $fee \
+    --index $index >/dev/null; then
     echo "❌ Failed to create draft transaction."
     exit 1
   fi
@@ -102,8 +102,8 @@ else
   if ! nockchain-wallet "${GRPC_ARGS[@]}" create-tx \
     --names "$names_arg" \
     --recipients "$recipients_arg" \
-    --gifts "$gift" \
-    --fee "$fee" >/dev/null; then
+    --gifts $gift \
+    --fee $fee >/dev/null; then
     echo "❌ Failed to create draft transaction."
     exit 1
   fi
@@ -120,9 +120,11 @@ echo "✅ Draft transaction created: $txfile"
 
 # Send TX
 echo "🚀 Sending transaction..."
-if output=$(nockchain-wallet "${GRPC_ARGS[@]}" send-tx "$txfile" 2>&1 | grep -vE '^\x1b\[.*m(I|\[I)'); then
-  echo "$output" | grep -v "nockchain_wallet" # strips the extra chatter
+output=$(nockchain-wallet "${GRPC_ARGS[@]}" send-tx "$txfile")
+if [[ $? -eq 0 ]]; then
+  echo -e "\n📝 Transaction details:\n$output"
   echo "✅ Transaction sent successfully!"
 else
+  echo -e "\n❌ Error details:\n$output"
   echo "❌ Failed to send transaction."
 fi

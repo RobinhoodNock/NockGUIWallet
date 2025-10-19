@@ -629,13 +629,13 @@ ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 def get_pubkeys():
     try:
         proc = subprocess.Popen(
-            ["nockchain-wallet"] + GRPC_ARGS + ["list-pubkeys"],
+            ["nockchain-wallet"] + GRPC_ARGS + ["list-master-addresses"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True
         )
 
-        pubkeys = []
+        addresses = []
         collecting_key = False
         current_key_lines = []
 
@@ -644,11 +644,11 @@ def get_pubkeys():
             if not line:
                 continue
 
-            if line.startswith("- Public Key:"):
-                key_part = line[len("- Public Key:"):].strip().strip("'")
+            if line.startswith("- Address:"):
+                key_part = line[len("- Address:"):].strip().strip("'").strip("(active)")
                 if key_part:
                     # Single-line key
-                    pubkeys.append(key_part.replace(" ", ""))
+                    addresses.append(key_part.replace(" ", ""))
                     collecting_key = False
                     current_key_lines = []
                 else:
@@ -660,7 +660,7 @@ def get_pubkeys():
             if collecting_key and line.startswith("- Chain Code:"):
                 key = ''.join(current_key_lines).replace(" ", "").strip("'")
                 if key:
-                    pubkeys.append(key)
+                    addresses.append(key)
                 collecting_key = False
                 current_key_lines = []
                 continue
@@ -672,13 +672,13 @@ def get_pubkeys():
         if collecting_key and current_key_lines:
             key = ''.join(current_key_lines).replace(" ", "").strip("'")
             if key:
-                pubkeys.append(key)
+                addresses.append(key)
 
         proc.wait()
-        return pubkeys
+        return addresses
 
     except Exception as e:
-        print(f"Error while getting pubkeys: {e}")
+        print(f"Error while getting addresses: {e}")
         return []
         
 def copy_to_clipboard(pubkey):
@@ -734,6 +734,7 @@ def _append_text(msg):
     output_text.config(state='disabled')
 
 # ---------------- CSV Parsing ---------------- #
+CSV_FOLDER = os.path.expanduser("~/nockchain")  # adjust if needed
 def auto_check_balance(pubkey, balance_main_label=None, balance_details_label=None):
     # Clear the output log before starting
     output_text.config(state='normal')
@@ -749,9 +750,20 @@ def auto_check_balance(pubkey, balance_main_label=None, balance_details_label=No
             # Run CSV command; wallet creates CSV automatically
             subprocess.run(
                 ["nockchain-wallet"] + GRPC_ARGS + ["list-notes-by-pubkey-csv", pubkey],
-                check=True
+                check=True,
+                cwd=CSV_FOLDER
             )
             log_message("✅ Balance CSV generated successfully!")
+
+            # Set active master address
+            log_message(f"🔹 Setting active master address...")
+            subprocess.run(
+                ["nockchain-wallet"] + GRPC_ARGS + ["set-active-master-address", pubkey],
+                check=True,
+                cwd=CSV_FOLDER
+            )
+            log_message("✅ Set active successfully!")
+
 
             # Parse CSV for summary
             total_assets, nocks = parse_balance_csv(pubkey)
@@ -774,9 +786,6 @@ def auto_check_balance(pubkey, balance_main_label=None, balance_details_label=No
 
     threading.Thread(target=run_balance_check, daemon=True).start()
     update_output_text(output_text, balance_queue)
-
-    
-CSV_FOLDER = os.path.expanduser("~/nockchain")  # adjust if needed
 
 def parse_balance_csv(pubkey):
     # Look for CSV files starting with 'notes-' + pubkey
